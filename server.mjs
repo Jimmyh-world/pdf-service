@@ -48,34 +48,14 @@ app.post('/generate-pdf', async (req, res) => {
 
     console.log(`[PDF] Generated ${pdfBuffer.length} bytes`);
 
-    // Upload to Supabase Storage
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+    // Convert to base64 for database storage
+    const pdfBase64 = pdfBuffer.toString('base64');
 
-    const storagePath = `digests/${filename}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('mundus-digests')
-      .upload(storagePath, pdfBuffer, {
-        contentType: 'application/pdf',
-        upsert: true
-      });
-
-    if (uploadError) {
-      throw new Error(`Upload failed: ${uploadError.message}`);
-    }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('mundus-digests')
-      .getPublicUrl(storagePath);
-
-    console.log(`[PDF] Uploaded to: ${urlData.publicUrl}`);
+    console.log(`[PDF] Converted to base64`);
 
     res.json({
       success: true,
-      pdf_url: urlData.publicUrl,
+      pdf_base64: pdfBase64,
       filename,
       size: pdfBuffer.length
     });
