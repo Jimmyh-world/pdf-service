@@ -78,7 +78,7 @@ curl http://localhost:3002/health
 curl -X POST http://localhost:3002/generate-pdf \
   -H "Content-Type: application/json" \
   -d '{"html": "<h1>Test</h1>", "filename": "test.pdf"}'
-# Expected: {"success": true, "pdf_url": "https://..."}
+# Expected: {"success": true, "pdf_base64": "JVBERi0xLjQK...", "filename": "test.pdf", "size": 12345}
 ```
 
 ---
@@ -86,17 +86,18 @@ curl -X POST http://localhost:3002/generate-pdf \
 ## Integration Points
 
 **Mundus backend will call:**
-- Internal: `http://mundus-pdf:3002/generate-pdf`
-- External: `http://localhost:3002/generate-pdf`
+- Internal (Docker): `http://mundus-pdf:3002/generate-pdf`
+- External (Network): `http://192.168.68.100:3002/generate-pdf`
+- Public (Cloudflare): `https://pdf.mundus.web3studio.dev/generate-pdf`
 
 **Workflow:**
 1. User approves digest in frontend
 2. Frontend calls `/api/v2/digest/send`
 3. Backend calls Beast PDF service with HTML
-4. PDF service generates PDF, uploads to Supabase Storage
-5. Returns `pdf_url` to backend
-6. Backend saves URL to database
-7. Backend sends email with PDF attached
+4. PDF service generates PDF using Puppeteer
+5. Returns `pdf_base64` (base64-encoded PDF data)
+6. Backend saves base64 to database
+7. Backend can decode base64 and send email with PDF attached
 
 ---
 
@@ -165,34 +166,14 @@ app.post('/generate-pdf', async (req, res) => {
 
     console.log(`[PDF] Generated ${pdfBuffer.length} bytes`);
 
-    // Upload to Supabase Storage
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+    // Convert to base64 for database storage
+    const pdfBase64 = pdfBuffer.toString('base64');
 
-    const storagePath = `digests/${filename}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('mundus-digests')
-      .upload(storagePath, pdfBuffer, {
-        contentType: 'application/pdf',
-        upsert: true
-      });
-
-    if (uploadError) {
-      throw new Error(`Upload failed: ${uploadError.message}`);
-    }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('mundus-digests')
-      .getPublicUrl(storagePath);
-
-    console.log(`[PDF] Uploaded to: ${urlData.publicUrl}`);
+    console.log(`[PDF] Converted to base64`);
 
     res.json({
       success: true,
-      pdf_url: urlData.publicUrl,
+      pdf_base64: pdfBase64,
       filename,
       size: pdfBuffer.length
     });
